@@ -1,43 +1,853 @@
-# Simple workflow for deploying static content to GitHub Pages
-name: Deploy static content to Pages
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
+<title>SMAF Online Radio — Live Player</title>
+<style>
+/* =====================================================================
+   STREAM CONFIGURATION — edit these three values to move the player to
+   a new Shoutcast/Icecast server at will. Nothing else needs touching.
+   ===================================================================== */
+</style>
+</head>
+<body>
 
-on:
-  # Runs on pushes targeting the default branch
-  push:
-    branches: ["main"]
+<script>
+const STREAM_CONFIG = {
+  PROTOCOL: "https",           // "http" or "https"
+  IP: "https://usa11.fastcast4u.com/proxy/smafmonline?mp=/1",  // Shoutcast/Icecast server host
+  PORT: "443",                    // leave blank to use the protocol's default port
+  MOUNT: "/proxy/smafmonline?mp=/1"
+};
 
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
+function buildStreamUrl(cfg){
+  const portPart = cfg.PORT ? `:${cfg.PORT}` : "";
+  return `${cfg.PROTOCOL}://${cfg.IP}${portPart}${cfg.MOUNT}`;
+}
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+/* =====================================================================
+   TICKER ACCESS + BACKEND
+   ACCESS_CODE gates the on-page editor so casual visitors can't touch
+   "https://usa11.fastcast4u.com/proxy/smafmonline?mp=/1"
+   "usa11.fastcast4u.com"
+   the scroller — it's a client-side convenience lock, not real auth
+   (anyone who views page source can read it). If you need a message to
+   really broadcast to every listener's browser, pair this with a small
+   backend at ENDPOINT:
+     GET  ENDPOINT  -> { "messages": ["msg1","msg2"] }
+     POST ENDPOINT  -> body { "message": "text" }
+   and move the passcode check server-side too.
+   ===================================================================== */
+const ACCESS_CODE = "447400";
+const TICKER_CONFIG = {
+  ENDPOINT: "",       // e.g. "https://your-api.example.com/smaf-ticker"
+  POLL_SECONDS: 20
+};
+</script>
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
+<style>
+:root{
+  --bg:#000000;
+  --ink:#f4ffe4;
+  --muted:rgba(244,255,228,0.55);
+  --faint:rgba(244,255,228,0.32);
+  --line:rgba(244,255,228,0.1);
+  --lemon-1:#f2ff8f;
+  --lemon-2:#d9ff4d;
+  --lemon-3:#b8e622;
+  --lemon-4:#7fae12;
+  --lemon-deep:#183a08;
+  --live-red:#ff4d3d;
+  --display:"Big Shoulders Display", "Arial Narrow", sans-serif;
+  --body:"Inter", -apple-system, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, monospace;
+}
+@import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-jobs:
-  # Single deploy job since we're just deploying
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          # Upload entire repository
-          path: '.'
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
+*{ box-sizing:border-box; margin:0; padding:0; }
+html,body{ height:100%; }
+body{
+  background:
+    radial-gradient(ellipse 120% 60% at 50% -10%, rgba(185,230,34,0.10), transparent 55%),
+    var(--bg);
+  color:var(--ink);
+  font-family:var(--body);
+  min-height:100dvh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding: max(20px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+}
+button{ font-family:inherit; }
+:focus-visible{ outline:2px solid var(--lemon-2); outline-offset:3px; }
+
+.page{
+  width:100%;
+  max-width:920px;
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  min-height:100%;
+}
+
+/* ---------- top bar ---------- */
+.topbar{
+  display:flex; align-items:flex-start; justify-content:space-between;
+  gap:12px; flex-wrap:wrap;
+  padding-top:6px;
+}
+.brand{ display:flex; align-items:center; gap:10px; }
+.brand .dot{
+  width:9px; height:9px; border-radius:50%;
+  background:var(--lemon-2);
+  box-shadow:0 0 10px 2px rgba(217,255,77,0.7);
+  flex-shrink:0;
+}
+.brand small{
+  display:block; font-family:var(--mono); font-size:10.5px;
+  letter-spacing:0.16em; text-transform:uppercase;
+  color:var(--muted);
+}
+.brand h1{
+  font-family:var(--display); font-weight:800; font-style:normal;
+  font-size:clamp(22px, 5.4vw, 32px);
+  letter-spacing:0.01em; text-transform:uppercase;
+  line-height:1.05; margin-top:2px;
+}
+
+.live-chip{
+  display:flex; align-items:center; gap:7px;
+  font-family:var(--mono); font-size:11px; letter-spacing:0.1em;
+  padding:7px 12px; border-radius:999px;
+  border:1px solid var(--line);
+  height:fit-content;
+}
+.live-chip .pulse{
+  width:7px; height:7px; border-radius:50%;
+  background:var(--live-red);
+  box-shadow:0 0 8px 2px rgba(255,77,61,0.65);
+  animation:pulse 1.5s ease-in-out infinite;
+}
+.live-chip.offline .pulse{ background:rgba(244,255,228,0.28); box-shadow:none; animation:none; }
+@keyframes pulse{
+  0%,100%{ opacity:1; }
+  50%{ opacity:0.4; }
+}
+
+/* ---------- hero / play button ---------- */
+.hero{
+  position:relative;
+  display:flex; align-items:center; justify-content:center;
+  padding-block: clamp(28px, 7vh, 64px);
+}
+.btn-halo{
+  position:absolute; top:50%; left:50%;
+  width:clamp(220px, 46vw, 360px); height:clamp(220px, 46vw, 360px);
+  transform:translate(-50%,-50%) rotate(0deg);
+  background:conic-gradient(from 0deg, var(--lemon-1), transparent 28%, var(--lemon-3) 50%, transparent 78%, var(--lemon-1));
+  filter:blur(42px);
+  opacity:0.3;
+  border-radius:50%;
+  pointer-events:none;
+  animation:halo-spin 18s linear infinite;
+}
+@keyframes halo-spin{ to{ transform:translate(-50%,-50%) rotate(360deg); } }
+
+.btn-wrap{
+  position:relative;
+  width:clamp(136px, 30vw, 212px); height:clamp(136px, 30vw, 212px);
+  display:flex; align-items:center; justify-content:center;
+}
+.ring{
+  position:absolute; inset:0;
+  border-radius:50%;
+  border:1.5px solid var(--lemon-2);
+  opacity:0;
+  transform:scale(0.6);
+  pointer-events:none;
+}
+.hero.playing .ring{ animation:ring-pulse 2.6s ease-out infinite; }
+.hero.playing .ring:nth-child(2){ animation-delay:0.87s; }
+.hero.playing .ring:nth-child(3){ animation-delay:1.74s; }
+@keyframes ring-pulse{
+  0%{ transform:scale(0.62); opacity:0.55; }
+  100%{ transform:scale(2.15); opacity:0; }
+}
+
+.play-btn{
+  position:relative;
+  width:82%; height:82%;
+  border-radius:50%;
+  border:none; cursor:pointer;
+  background:radial-gradient(circle at 34% 28%, var(--lemon-1), var(--lemon-3) 58%, var(--lemon-4) 100%);
+  box-shadow:
+    0 0 22px 3px rgba(217,255,77,0.85),
+    0 0 55px 14px rgba(217,255,77,0.4),
+    0 0 110px 34px rgba(184,230,34,0.22),
+    inset 0 -8px 16px rgba(0,0,0,0.22),
+    inset 0 6px 10px rgba(255,255,255,0.4);
+  display:flex; align-items:center; justify-content:center;
+  animation:breathe 3.2s ease-in-out infinite;
+  transition:transform 0.15s ease;
+}
+.play-btn:hover{ transform:scale(1.03); }
+.play-btn:active{ transform:scale(0.97); }
+.hero.playing .play-btn{ animation:breathe-active 1.7s ease-in-out infinite; }
+@keyframes breathe{
+  0%,100%{ transform:scale(1); }
+  50%{ transform:scale(1.025); }
+}
+@keyframes breathe-active{
+  0%,100%{
+    box-shadow:
+      0 0 26px 4px rgba(217,255,77,0.95),
+      0 0 60px 16px rgba(217,255,77,0.5),
+      0 0 120px 38px rgba(184,230,34,0.28),
+      inset 0 -8px 16px rgba(0,0,0,0.22),
+      inset 0 6px 10px rgba(255,255,255,0.4);
+  }
+  50%{
+    box-shadow:
+      0 0 34px 7px rgba(217,255,77,1),
+      0 0 80px 22px rgba(217,255,77,0.6),
+      0 0 150px 46px rgba(184,230,34,0.34),
+      inset 0 -8px 16px rgba(0,0,0,0.22),
+      inset 0 6px 10px rgba(255,255,255,0.4);
+  }
+}
+.play-btn svg{ width:34%; height:34%; }
+
+/* ---------- now playing ---------- */
+.now{
+  text-align:center;
+  display:flex; flex-direction:column; gap:4px;
+  margin-bottom:clamp(18px, 4vh, 32px);
+}
+.now .label{
+  font-family:var(--mono); font-size:10.5px; letter-spacing:0.18em;
+  text-transform:uppercase; color:var(--lemon-2);
+}
+.now .track{
+  font-family:var(--display); font-weight:700; text-transform:uppercase;
+  letter-spacing:0.01em;
+  font-size:clamp(16px, 3.6vw, 20px);
+}
+.now .sub{ font-size:12.5px; color:var(--muted); }
+
+/* ---------- visualizer ---------- */
+.wave-stage{
+  width:100%;
+  border-radius:14px;
+  border:1px solid var(--line);
+  background:linear-gradient(180deg, rgba(244,255,228,0.035), rgba(244,255,228,0.01));
+  padding:14px 14px 10px;
+  margin-bottom:8px;
+}
+#bars{ width:100%; height:clamp(110px, 20vh, 200px); display:block; }
+.freq-line{
+  display:flex; justify-content:space-between;
+  font-family:var(--mono); font-size:9.5px; letter-spacing:0.06em;
+  color:var(--faint);
+  margin-top:8px;
+}
+
+.status-msg{
+  text-align:center;
+  font-family:var(--mono); font-size:11px; color:var(--lemon-2);
+  min-height:16px; margin:10px 0 4px;
+}
+
+/* ---------- ticker + gate ---------- */
+.ticker-section{ margin-top:auto; padding-top:20px; }
+.ticker-row{
+  display:flex; align-items:stretch; gap:8px;
+}
+.ticker-bar{
+  flex:1; overflow:hidden;
+  background:rgba(244,255,228,0.045);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:10px 0;
+  white-space:nowrap;
+}
+.ticker-track{
+  display:inline-flex; gap:56px;
+  animation:ticker-scroll 24s linear infinite;
+  padding-left:100%;
+}
+.ticker-item{
+  font-family:var(--mono); font-size:12px; letter-spacing:0.03em;
+  color:var(--lemon-2);
+}
+@keyframes ticker-scroll{
+  0%{ transform:translateX(0); }
+  100%{ transform:translateX(-100%); }
+}
+.lock-btn{
+  flex-shrink:0; width:44px;
+  background:rgba(244,255,228,0.045);
+  border:1px solid var(--line);
+  border-radius:10px;
+  color:var(--muted);
+  cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  font-size:16px;
+}
+.lock-btn:hover{ color:var(--lemon-2); border-color:rgba(217,255,77,0.4); }
+
+.gate-panel{
+  margin-top:10px;
+  background:rgba(244,255,228,0.035);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:14px;
+}
+.gate-panel label{
+  display:block; font-family:var(--mono); font-size:10px;
+  letter-spacing:0.08em; text-transform:uppercase;
+  color:var(--muted); margin-bottom:8px;
+}
+.gate-stage{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.gate-stage input{
+  flex:1; min-width:140px;
+  background:rgba(0,0,0,0.5);
+  border:1px solid var(--line);
+  border-radius:8px;
+  color:var(--ink);
+  font-family:var(--mono); font-size:15px; letter-spacing:0.3em;
+  padding:9px 12px;
+  outline:none;
+}
+.gate-stage input:focus{ border-color:var(--lemon-2); }
+.gate-stage input.shake{ animation:shake 0.4s ease; border-color:var(--live-red); }
+@keyframes shake{
+  0%,100%{ transform:translateX(0); }
+  25%{ transform:translateX(-6px); }
+  75%{ transform:translateX(6px); }
+}
+.btn-solid{
+  background:var(--lemon-3);
+  color:#0a1204; border:none;
+  font-family:var(--mono); font-weight:500; font-size:11.5px; letter-spacing:0.05em;
+  padding:9px 16px; border-radius:8px; cursor:pointer;
+  white-space:nowrap;
+}
+.btn-solid:hover{ background:var(--lemon-2); }
+.btn-solid:disabled{ opacity:0.4; cursor:not-allowed; }
+.btn-ghost{
+  background:none;
+  border:1px solid var(--line);
+  color:var(--muted);
+  font-family:var(--mono); font-size:11.5px; letter-spacing:0.05em;
+  padding:8px 14px; border-radius:8px; cursor:pointer;
+  white-space:nowrap;
+}
+.btn-ghost:hover{ color:var(--ink); border-color:rgba(244,255,228,0.3); }
+
+.gate-msg{
+  width:100%;
+  font-family:var(--mono); font-size:10.5px;
+  color:var(--live-red);
+  min-height:14px; margin-top:4px;
+}
+.gate-msg.ok{ color:var(--lemon-2); }
+
+.editor-stage textarea{
+  width:100%; resize:vertical; min-height:60px;
+  background:rgba(0,0,0,0.5);
+  border:1px solid var(--line);
+  border-radius:8px;
+  color:var(--ink);
+  font-family:var(--body); font-size:13.5px;
+  padding:10px 12px;
+  outline:none;
+}
+.editor-stage textarea:focus{ border-color:var(--lemon-2); }
+.editor-row{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:10px; margin-top:9px; flex-wrap:wrap;
+}
+.editor-count{ font-family:var(--mono); font-size:9.5px; color:var(--faint); }
+.editor-actions{ display:flex; gap:8px; margin-left:auto; }
+.editor-hint{
+  font-family:var(--mono); font-size:10.5px; color:var(--lemon-2);
+  min-height:14px; margin-top:8px;
+}
+
+/* ---------- bottom bar ---------- */
+.foot{
+  margin-top:18px; padding-top:16px;
+  border-top:1px solid var(--line);
+  display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+}
+.vol-wrap{ display:flex; align-items:center; gap:10px; flex:1; min-width:140px; }
+.vol-wrap svg{ width:16px; height:16px; opacity:0.6; flex-shrink:0; fill:var(--ink); }
+input[type="range"]{
+  -webkit-appearance:none; appearance:none;
+  width:100%; height:3px; border-radius:2px;
+  background:rgba(244,255,228,0.18);
+  outline:none;
+}
+input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  width:13px; height:13px; border-radius:50%;
+  background:var(--lemon-2); cursor:pointer;
+  border:2px solid #0a1204;
+  box-shadow:0 0 6px 1px rgba(217,255,77,0.6);
+}
+input[type="range"]::-moz-range-thumb{
+  width:13px; height:13px; border-radius:50%;
+  background:var(--lemon-2); cursor:pointer;
+  border:2px solid #0a1204;
+}
+.tagline{
+  font-family:var(--mono); font-size:10px; letter-spacing:0.05em;
+  color:var(--faint); white-space:nowrap;
+}
+
+@media (max-width:420px){
+  .foot{ flex-direction:column; align-items:stretch; }
+  .tagline{ text-align:center; white-space:normal; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .btn-halo{ animation-duration:60s; }
+  .play-btn{ animation:none; }
+  .hero.playing .ring{ animation-duration:6s; }
+  .ticker-track{ animation-duration:70s; }
+  .live-chip .pulse{ animation:none; }
+}
+</style>
+
+<div class="page">
+
+  <div class="topbar">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <div>
+        <small>SMA FM 104.7 MHz — Online</small>
+        <h1>SMAF Online Radio</h1>
+      </div>
+    </div>
+    <div class="live-chip offline" id="liveChip">
+      <span class="pulse" aria-hidden="true"></span>
+      <span id="liveLabel">OFFLINE</span>
+    </div>
+  </div>
+
+  <div class="hero" id="hero">
+    <div class="btn-halo" aria-hidden="true"></div>
+    <div class="btn-wrap">
+      <span class="ring" aria-hidden="true"></span>
+      <span class="ring" aria-hidden="true"></span>
+      <span class="ring" aria-hidden="true"></span>
+      <button class="play-btn" id="playBtn" aria-label="Play SMA FM live stream">
+        <svg id="playIcon" viewBox="0 0 24 24" fill="#0a1204"><path d="M8 5v14l11-7z"/></svg>
+        <svg id="pauseIcon" viewBox="0 0 24 24" fill="#0a1204" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="now">
+    <span class="label">On Air</span>
+    <span class="track" id="nowTrack">SMA 104.7 FM — Live Stream</span>
+    <span class="sub" id="nowSub">Tap play to connect to the live signal</span>
+  </div>
+
+  <div class="wave-stage">
+    <canvas id="bars"></canvas>
+    <div class="freq-line">
+      <span>60Hz</span><span>250Hz</span><span>1kHz</span><span>4kHz</span><span>12kHz</span>
+    </div>
+  </div>
+
+  <div class="status-msg" id="statusMsg" aria-live="polite"></div>
+
+  <div class="ticker-section">
+    <div class="ticker-row">
+      <div class="ticker-bar" aria-label="Listener announcements">
+        <div class="ticker-track" id="tickerTrack"></div>
+      </div>
+      <button class="lock-btn" id="lockBtn" aria-label="Edit ticker message" title="Edit ticker message">🔒</button>
+    </div>
+
+    <div class="gate-panel" id="gatePanel" hidden>
+      <div class="gate-stage" id="gateStage">
+        <div style="flex:1; min-width:180px;">
+          <label for="gateInput">Enter access code</label>
+          <input type="password" id="gateInput" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••••" autocomplete="off">
+        </div>
+        <button class="btn-solid" id="gateSubmit">Unlock</button>
+        <p class="gate-msg" id="gateMsg" aria-live="polite"></p>
+      </div>
+
+      <div class="editor-stage" id="editorStage" hidden>
+        <label for="editMsg">Scrolling message for listeners</label>
+        <textarea id="editMsg" rows="2" maxlength="220" placeholder="Type an announcement — tonight's schedule, a shout-out, a community notice…"></textarea>
+        <div class="editor-row">
+          <span class="editor-count" id="editCount">220 characters left</span>
+          <div class="editor-actions">
+            <button class="btn-ghost" id="clearMsgs">Clear all</button>
+            <button class="btn-ghost" id="relockBtn">Lock</button>
+            <button class="btn-solid" id="postMsg">Post to ticker</button>
+          </div>
+        </div>
+        <p class="editor-hint" id="editorHint" aria-live="polite"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div class="vol-wrap">
+      <svg viewBox="0 0 24 24"><path d="M3 10v4h4l5 5V5L7 10H3z"/></svg>
+      <input type="range" id="volume" min="0" max="1" step="0.01" value="0.85" aria-label="Volume">
+    </div>
+    <button class="btn-ghost" id="reconnectBtn">Reconnect</button>
+    <span class="tagline">SMA FM · Broadcasting to Ikwuano &amp; beyond</span>
+  </div>
+
+</div>
+
+<audio id="audio" preload="none"></audio>
+
+<script>
+(function(){
+  const streamUrl = buildStreamUrl(STREAM_CONFIG);
+
+  const audio = document.getElementById('audio');
+  const hero = document.getElementById('hero');
+  const playBtn = document.getElementById('playBtn');
+  const playIcon = document.getElementById('playIcon');
+  const pauseIcon = document.getElementById('pauseIcon');
+  const volume = document.getElementById('volume');
+  const liveChip = document.getElementById('liveChip');
+  const liveLabel = document.getElementById('liveLabel');
+  const statusMsg = document.getElementById('statusMsg');
+  const nowSub = document.getElementById('nowSub');
+  const reconnectBtn = document.getElementById('reconnectBtn');
+
+  audio.volume = parseFloat(volume.value);
+
+  let isPlaying = false;
+  let audioCtx, analyser, source, dataArray, rafId;
+  let ambientMode = false;
+  let playStartedAt = 0;
+  let retried = false;
+
+  function setLive(on){
+    liveChip.classList.toggle('offline', !on);
+    liveLabel.textContent = on ? 'LIVE' : 'OFFLINE';
+  }
+
+  function loadStream(){
+    audio.src = streamUrl;
+  }
+
+  function connectAndPlay(){
+    statusMsg.textContent = 'Connecting to stream…';
+    loadStream();
+    audio.play().then(()=>{
+      retried = false;
+      isPlaying = true;
+      playStartedAt = performance.now();
+      playIcon.style.display = 'none';
+      pauseIcon.style.display = 'block';
+      playBtn.setAttribute('aria-label', 'Pause SMA FM live stream');
+      hero.classList.add('playing');
+      setLive(true);
+      statusMsg.textContent = '';
+      nowSub.textContent = 'Streaming live — SMA 104.7 FM';
+      initVisualizer();
+    }).catch(()=>{
+      if (!retried){
+        retried = true;
+        setTimeout(connectAndPlay, 500);
+      } else {
+        retried = false;
+        statusMsg.textContent = 'Could not connect — the stream server may be offline.';
+        setLive(false);
+      }
+    });
+  }
+
+  function togglePlay(){
+    if (!isPlaying){
+      connectAndPlay();
+    } else {
+      audio.pause();
+      isPlaying = false;
+      playIcon.style.display = 'block';
+      pauseIcon.style.display = 'none';
+      playBtn.setAttribute('aria-label', 'Play SMA FM live stream');
+      hero.classList.remove('playing');
+      setLive(false);
+      nowSub.textContent = 'Paused';
+      cancelAnimationFrame(rafId);
+    }
+  }
+
+  playBtn.addEventListener('click', togglePlay);
+  volume.addEventListener('input', ()=>{ audio.volume = parseFloat(volume.value); });
+
+  reconnectBtn.addEventListener('click', ()=>{
+    isPlaying = false;
+    retried = false;
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    setLive(false);
+    hero.classList.remove('playing');
+    playIcon.style.display = 'block';
+    pauseIcon.style.display = 'none';
+    statusMsg.textContent = 'Stream reset. Press play to reconnect.';
+    cancelAnimationFrame(rafId);
+  });
+
+  audio.addEventListener('stalled', ()=>{ statusMsg.textContent = 'Buffering…'; });
+  audio.addEventListener('waiting', ()=>{ statusMsg.textContent = 'Buffering…'; });
+  audio.addEventListener('playing', ()=>{ statusMsg.textContent = ''; });
+  audio.addEventListener('error', ()=>{
+    if (!isPlaying && !retried){
+      retried = true;
+      setTimeout(connectAndPlay, 500);
+      return;
+    }
+    retried = false;
+    statusMsg.textContent = 'Stream error — the server may be offline or unreachable.';
+    setLive(false);
+    isPlaying = false;
+    hero.classList.remove('playing');
+    playIcon.style.display = 'block';
+    pauseIcon.style.display = 'none';
+  });
+
+  /* ---------- spectrum visualizer ---------- */
+  const canvas = document.getElementById('bars');
+  const ctx2d = canvas.getContext('2d');
+  let cssW = 0, cssH = 0;
+
+  function resizeCanvas(){
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    cssW = rect.width; cssH = rect.height;
+    canvas.width = Math.max(1, Math.round(cssW * dpr));
+    canvas.height = Math.max(1, Math.round(cssH * dpr));
+    ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  function initVisualizer(){
+    ambientMode = false;
+    if (audioCtx){ draw(); return; }
+    try{
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      source = audioCtx.createMediaElementSource(audio);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 128;
+      source.connect(analyser);
+      analyser.connect(audioCtx.destination);
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+      draw();
+    }catch(e){
+      ambientMode = true;
+      draw();
+    }
+  }
+
+  function draw(){
+    if (!isPlaying){ ctx2d.clearRect(0,0,cssW,cssH); return; }
+
+    let data;
+    if (!ambientMode && analyser){
+      analyser.getByteFrequencyData(dataArray);
+      const peak = Math.max(...dataArray);
+      if (peak === 0 && performance.now() - playStartedAt > 1500){
+        ambientMode = true; // likely CORS-restricted stream; fall back gracefully
+      }
+      data = dataArray;
+    }
+    if (ambientMode || !data){
+      const t = performance.now() / 500;
+      data = new Uint8Array(32).map((_, i) => {
+        const wave = Math.sin(t + i * 0.5) * 0.5 + 0.5;
+        return Math.round(40 + wave * 150 + Math.random() * 40);
+      });
+    }
+
+    renderBars(data);
+    rafId = requestAnimationFrame(draw);
+  }
+
+  function renderBars(data){
+    ctx2d.clearRect(0,0,cssW,cssH);
+    const barCount = 32;
+    const step = Math.floor(data.length / barCount) || 1;
+    const barW = cssW / barCount;
+    for (let i=0;i<barCount;i++){
+      const v = data[i*step] / 255;
+      const barH = Math.max(v * cssH * 0.92, cssH*0.035);
+      const x = i * barW;
+      const hue = 72 + (i % 5) * 3;
+      const light = 46 + v * 34;
+      const top = `hsl(${hue} 88% ${light}%)`;
+      const grad = ctx2d.createLinearGradient(0, cssH-barH, 0, cssH);
+      grad.addColorStop(0, top);
+      grad.addColorStop(1, 'hsl(' + hue + ' 70% 14%)');
+      ctx2d.fillStyle = grad;
+      ctx2d.fillRect(x + barW*0.18, cssH - barH, barW*0.64, barH);
+    }
+  }
+
+  /* ---------- announcement ticker ---------- */
+  const tickerTrack = document.getElementById('tickerTrack');
+  const lockBtn = document.getElementById('lockBtn');
+  const gatePanel = document.getElementById('gatePanel');
+  const gateStage = document.getElementById('gateStage');
+  const gateInput = document.getElementById('gateInput');
+  const gateSubmit = document.getElementById('gateSubmit');
+  const gateMsg = document.getElementById('gateMsg');
+  const editorStage = document.getElementById('editorStage');
+  const editMsg = document.getElementById('editMsg');
+  const editCount = document.getElementById('editCount');
+  const postMsg = document.getElementById('postMsg');
+  const clearMsgs = document.getElementById('clearMsgs');
+  const relockBtn = document.getElementById('relockBtn');
+  const editorHint = document.getElementById('editorHint');
+
+  let messages = [ "Welcome to SMA FM 104.7 MHz – Online. Stay tuned for updates." ];
+  let unlocked = false;
+
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function renderTicker(){
+    tickerTrack.innerHTML = messages
+      .map(m => `<span class="ticker-item">${escapeHtml(m)}</span>`)
+      .join('<span class="ticker-item">•</span>');
+    tickerTrack.style.animation = 'none';
+    void tickerTrack.offsetWidth;
+    tickerTrack.style.animation = null;
+  }
+
+  function showGateStage(){
+    gateStage.hidden = false;
+    editorStage.hidden = true;
+    gateInput.value = '';
+    gateMsg.textContent = '';
+    gateMsg.classList.remove('ok');
+  }
+  function showEditorStage(){
+    gateStage.hidden = true;
+    editorStage.hidden = false;
+    editorHint.textContent = '';
+  }
+
+  lockBtn.addEventListener('click', ()=>{
+    const willOpen = gatePanel.hidden;
+    gatePanel.hidden = !willOpen;
+    if (willOpen){
+      if (unlocked) showEditorStage(); else showGateStage();
+      (unlocked ? editMsg : gateInput).focus();
+    }
+  });
+
+  gateSubmit.addEventListener('click', attemptUnlock);
+  gateInput.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') attemptUnlock(); });
+
+  function attemptUnlock(){
+    if (gateInput.value.trim() === ACCESS_CODE){
+      unlocked = true;
+      gateMsg.textContent = 'Unlocked.';
+      gateMsg.classList.add('ok');
+      showEditorStage();
+      editMsg.focus();
+    } else {
+      gateMsg.textContent = 'Incorrect code — try again.';
+      gateMsg.classList.remove('ok');
+      gateInput.classList.remove('shake');
+      void gateInput.offsetWidth;
+      gateInput.classList.add('shake');
+      gateInput.value = '';
+      gateInput.focus();
+    }
+  }
+
+  relockBtn.addEventListener('click', ()=>{
+    unlocked = false;
+    gatePanel.hidden = true;
+  });
+
+  editMsg.addEventListener('input', ()=>{
+    editCount.textContent = (220 - editMsg.value.length) + ' characters left';
+  });
+
+  postMsg.addEventListener('click', async ()=>{
+    const text = editMsg.value.trim();
+    if (!text){ editorHint.textContent = 'Type a message first.'; return; }
+
+    postMsg.disabled = true;
+    editorHint.textContent = '';
+
+    if (TICKER_CONFIG.ENDPOINT){
+      try{
+        const res = await fetch(TICKER_CONFIG.ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text })
+        });
+        if (!res.ok) throw new Error('Request failed');
+        editorHint.textContent = 'Sent — now broadcasting to all listeners.';
+        fetchRemoteMessages();
+      }catch(err){
+        editorHint.textContent = 'Could not reach the ticker server — posted locally only.';
+        messages.push(text);
+        renderTicker();
+      }
+    } else {
+      messages.push(text);
+      renderTicker();
+      editorHint.textContent = 'Posted (visible in this browser only — connect an ENDPOINT to broadcast to all listeners).';
+    }
+
+    editMsg.value = '';
+    editCount.textContent = '220 characters left';
+    postMsg.disabled = false;
+  });
+
+  clearMsgs.addEventListener('click', ()=>{
+    messages = [ "Welcome to SMA FM 104.7 MHz – Online. Stay tuned for updates." ];
+    renderTicker();
+    editorHint.textContent = 'Ticker cleared.';
+  });
+
+  async function fetchRemoteMessages(){
+    if (!TICKER_CONFIG.ENDPOINT) return;
+    try{
+      const res = await fetch(TICKER_CONFIG.ENDPOINT);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.messages) && data.messages.length){
+        messages = data.messages;
+        renderTicker();
+      }
+    }catch(err){ /* silent — keep last known messages on failure */ }
+  }
+
+  if (TICKER_CONFIG.ENDPOINT){
+    fetchRemoteMessages();
+    setInterval(fetchRemoteMessages, TICKER_CONFIG.POLL_SECONDS * 1000);
+  }
+
+  renderTicker();
+})();
+</script>
+
+</body>
+</html>
